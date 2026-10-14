@@ -4,7 +4,7 @@ output: github_document
 date: "2026-10-13"
 ---
 
-#Problem 1
+# Problem 1
 
 First we load our data and necessary libraries.
 ```{r}
@@ -27,6 +27,7 @@ ny_noaa_clean = ny_noaa |>
     month= as.double(month),
     day = as.double(day)
   )
+
 ```
 Looking at the data, we've made years, months, and days separate. Looking at the observations for temperature, the values vary between `r min(pull(ny_noaa_clean, tmin), na.rm=TRUE)` and `r max(pull(ny_noaa_clean, tmax), na.rm=TRUE)`, so the units are likely to be in Fahrenheit. For the precipitation, we have a range from `r min(pull(ny_noaa_clean, prcp), na.rm=TRUE)` and `r max(pull(ny_noaa_clean, prcp), na.rm=TRUE)`, so it could be units like cubic millimeters, or another small base unit. For snowfall, we have one column for snow and one column for snwd, which likely implies snow depth. The first observation might be new snow gained today and the second may be total snow depth, but would require more clarification. For snowfall, the most commonly observed value is `r arrange(count(ny_noaa_clean, snow), desc(n))[1,1]`, which makes sense as most of the seasons do not have snowfall.
 
@@ -181,7 +182,8 @@ tf_data = accel_data |>
   group_by(minute, sex, education) |> 
   summarize(mean_day = mean(value, na.rm = TRUE), .groups = "drop")
 
-tf_data |> ggplot(aes(x = minute, y=mean_day, color=sex)) +
+tf_data |> 
+  ggplot(aes(x = minute, y=mean_day, color=sex)) +
   geom_point(alpha=0.0) +
   geom_smooth() +
   facet_grid(. ~ education) +
@@ -194,6 +196,117 @@ tf_data |> ggplot(aes(x = minute, y=mean_day, color=sex)) +
 We initially plot this as a point/scatter plot distirbution, but due to the number of points and subsequent ambiguity, we change over to the smooth curve approximation for better clarity. We can see that for the education group, less than high school, the men and women activity time is very similar over the day, with men perhaps having slightly more activity early in the day. In the following two education groups, we can see that women have a higher activity time during the middle sections of the day, which is especially prominent in the more than high school education group.
 
 # Problem 3
+
+We first import, clean, and tidy the data:
+
+```{r}
+jan_2020 = 
+  read_csv("data/citibike/Jan 2020 Citi.csv",
+                    na = c("NA", ".", "")) |> 
+  janitor::clean_names() |> 
+  rename(status = member_casual) |> 
+  mutate(
+    month = "jan", 
+    year = 2020
+  )
+
+jan_2024 = 
+  read_csv("data/citibike/Jan 2024 Citi.csv",
+                    na = c("NA", ".", "")) |> 
+  janitor::clean_names() |> 
+  rename(status = member_casual) |> 
+  mutate(
+    month = "jan", 
+    year = 2024
+  )
+
+july_2020 = 
+  read_csv("data/citibike/July 2020 Citi.csv",
+                    na = c("NA", ".", "")) |> 
+  janitor::clean_names() |> 
+  rename(status = member_casual) |> 
+  mutate(
+    month = "july", 
+    year = 2020
+  )
+
+july_2024 = 
+  read_csv("data/citibike/July 2024 Citi.csv",
+                    na = c("NA", ".", "")) |> 
+  janitor::clean_names() |> 
+  rename(status = member_casual) |> 
+  mutate(
+    month = "july", 
+    year = 2024
+  )
+
+rides_data = bind_rows(jan_2020, jan_2024, july_2020, july_2024)
+
+```
+
+After importing the bike ride data for each month and year given, we define our na values, clean the names, rename necessary variables to more read-able values, and add a year and month column. Then we combine all datasets into one dataset with `r ncol(rides_data)` variables (cols) and `r nrow(rides_data)` rides tracked (rows). We have both identification variables like `r names(rides_data)[0:3]` and `r names(rides_data)[7:9]`, and we have ride characteristic variables like `r names(rides_data)[4:6]`. The ride during is in minutes and the station names are street intersections. The options for status are member and casual.
+
+Below is a table showing the total number of rides in each combination of year and month separating casual riders and Citi Bike members.
+
+```{r}
+rides_data |> 
+  group_by(year, month, status) |> 
+  summarize(count = n()) |>  knitr::kable(digits = 1)
+```
+
+In the table above, we can see that for each month, the number of member rides greatly exceeds the number of casual rides. For example, in January of 2020, we saw that `r count(filter(rides_data, month=="jan", year=="2020", status=="member")) / (count(filter(rides_data, month=="jan", year=="2020", status=="casual")) + count(filter(rides_data, month=="jan", year=="2020", status=="member"))) * 100` percent of rides were from members. This makes sense as riders who rode more often were more likely to be members, thus the higher total number. From 2020 to 2024, we can also see a general increase in both the number of riders, which means more people were using the bikes. We can also see that relative to each year, the number of people using the bikes in July exceeds the number in January, which makes sense as its warmer out and people are more likely to bike.
+
+In the table below, we show the 5 most popular starting stations for July 2024:
+
+```{r}
+top_5 = rides_data |> 
+  filter(month == "july", year == "2024") |> 
+  group_by(start_station_name) |> 
+  summarize(num_rides = n()) |> 
+  arrange(desc(num_rides)) |> 
+  head(5)
+top_5 |> knitr::kable(digits = 1)
+```
+
+
+As we can see in the table above, the ordering of the top five most popular starting stations were `r pull(top_5, start_station_name)` with the number of rides at each station being `r pull(top_5, num_rides)` respectively.
+
+Now we can make a plot that looks at the effects of day of the week, month, and year on median ride duration:
+```{r}
+rides_data |> 
+  filter(!is.na(duration), !is.na(weekdays)) |>
+  mutate(
+    weekdays = factor(
+      weekdays,
+      levels=c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
+    ),
+    year = as.character(year)
+  ) |> 
+  group_by(weekdays, month, year) |> 
+  summarize(median_ride = median(duration, na.rm=TRUE), .groups="drop") |> 
+  ggplot(aes(x = weekdays, y= median_ride, color=year)) +
+  geom_point(size=3) +
+  facet_grid(. ~ month) +
+  theme(axis.text.x = element_text(angle = 90, hjust=1))
+```
+
+
+As we can see in the plot above, for each month and each year, the weekends (Saturday and Sunday) all seem to have a jump in median rides, which is understandable seeing that it is when most people are not in work, and thus have time for more leisure activities. Surprisingly, we see that July 2020 has a increase in overall median rides compared to our other three time periods, which could be related to the height of the pandemic, where people were looking for outside activities that were within the boundaries of social distancing. The other three time periods have similar patterns and median rides, with january 2020 and 2024 being slightly lower than the july 2024, which could be due to the colder weather.
+
+Lastly, we have a figure that shows the impact of month, membership status, and bike type on the distribution of ride duration:
+
+```{r}
+rides_data |> 
+  filter(year== "2024", !is.na(duration), duration < 100) |> 
+  ggplot(aes(x=duration, color=rideable_type)) +
+  geom_density() +
+  facet_grid(month ~ status)
+```
+
+Taking a look at these plots, we can see that for casual members, they often took longer duration rides, for both the electrical and classic bikes. Even more so, we can see a slightly lower density at smaller durations for the classical bikes and higher densities for the medium duration. For the members, we can see they mostly took shorter rides, for both electrical bikes and classic bikes, and a similar overall density distribution between the two bike types. This makes sense as with a membership and lower costs per bike ride, they are more inclined to take short bike rides instead of maximizing the duration to cost ratio as a non-member would. Between July and January, there are small differences, but nothing large enough that I would note it as statistically significant.
+
+
+
 
 
 
