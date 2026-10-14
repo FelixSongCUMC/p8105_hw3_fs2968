@@ -1,0 +1,200 @@
+---
+title: "p8105_hw3_fs2968"
+output: github_document
+date: "2026-10-13"
+---
+
+#Problem 1
+
+First we load our data and necessary libraries.
+```{r}
+library(tidyverse)
+library(patchwork)
+library(p8105.datasets)
+data("ny_noaa")
+
+
+
+```
+
+This dataset `ny_noaa` shows the climate, including the amount of precipitation, snowfall, and snow depth, and some identification variables like id and date. There are a total of `r ncol(ny_noaa)` variables and `r nrow(ny_noaa)` data entries. In regards to the number of missing data entries, there are a total of `r sum(is.na(ny_noaa))` values, which is `r sum(is.na(ny_noaa)) / (ncol(ny_noaa) * nrow(ny_noaa)) * 100` percent of the whole dataset. Now, we can do some data cleaning,
+```{r}
+ny_noaa_clean = ny_noaa |> 
+  janitor::clean_names() |> 
+  separate(date, into=c("year", "month", "day"), sep="-", remove=TRUE) |> 
+  mutate(
+    year = as.double(year),
+    month= as.double(month),
+    day = as.double(day)
+  )
+```
+Looking at the data, we've made years, months, and days separate. Looking at the observations for temperature, the values vary between `r min(pull(ny_noaa_clean, tmin), na.rm=TRUE)` and `r max(pull(ny_noaa_clean, tmax), na.rm=TRUE)`, so the units are likely to be in Fahrenheit. For the precipitation, we have a range from `r min(pull(ny_noaa_clean, prcp), na.rm=TRUE)` and `r max(pull(ny_noaa_clean, prcp), na.rm=TRUE)`, so it could be units like cubic millimeters, or another small base unit. For snowfall, we have one column for snow and one column for snwd, which likely implies snow depth. The first observation might be new snow gained today and the second may be total snow depth, but would require more clarification. For snowfall, the most commonly observed value is `r arrange(count(ny_noaa_clean, snow), desc(n))[1,1]`, which makes sense as most of the seasons do not have snowfall.
+
+Next, we can make a plot showing the average max temperature in January and in July in each station across years.
+
+```{r}
+ny_noaa_clean |> 
+  filter(month == 1 | month == 7) |> 
+  group_by(year, month) |> 
+  summarize(
+    mean_tmax = mean(tmax, na.rm=TRUE), .groups= "drop"
+  ) |> 
+  ggplot(aes(x = year, y=mean_tmax, color=month)) + 
+  geom_point() +
+  geom_line() +
+  labs(
+    x = "Year",
+    y = "Average Max Temperature (°C)",
+    color = "Month"
+  ) +
+  facet_grid(. ~ month)
+```
+
+As we can see, there are no observable structure or datapoints for any max temperature in Janurary or July across each year. 
+
+Now, for a two-panel plat showing tmax and tmin for the full dataset:
+
+```{r}
+plot1 = ny_noaa_clean |> 
+  filter(!is.na(tmin), !is.na(tmax)) |> 
+  ggplot(aes(x = tmin, y=tmax)) + 
+  geom_hex(bins = 30) +
+  viridis::scale_fill_viridis() +
+  labs(
+    title = "Max vs. Min Temperature",
+    x = "Min Temp",
+    y = "Max Temp",
+  ) 
+
+plot2 = ny_noaa_clean |>
+  filter(!is.na(snow), snow > 0, snow < 100) |> 
+  ggplot(aes(x=factor(year), y=snow)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 90, hjust=1))
+  
+(plot1 + plot2)
+```
+
+
+
+# Problem 2
+
+
+We load, tidy, and organize the dataset below:
+
+```{r}
+accel_data = 
+  read_csv("data/nhanes_accel.csv",
+            na = c("NA", ".", "")) |> 
+  janitor::clean_names() |> 
+  pivot_longer(
+    min1:min1440,
+    names_to= "minute",
+    names_prefix = "min",
+    values_to = "value"
+  ) |> 
+  mutate(
+    minute = as.integer(minute)
+  )
+
+
+demo_data = 
+  read_csv("data/nhanes_covar.csv",
+           skip=4,
+           na = c("NA", ".", "")) |> 
+  janitor::clean_names() |> 
+  mutate(
+    sex = case_match(
+      sex,
+      1 ~ "Male",
+      2 ~ "Female"
+    ),
+    sex = as.factor(sex),
+    education = case_match(
+      education,
+      1 ~ "Less than high school",
+      2 ~ "High school equivalent",
+      3 ~ "More than high school"
+    ),
+  education = factor(
+    education,
+    levels=c("Less than high school", "High school equivalent", "More than high school")
+  )) |> 
+  filter(age >= 21) |> 
+  drop_na(sex, age, bmi, education)
+
+accel_data = filter(accel_data, seqn %in% pull(demo_data, seqn))
+
+```
+
+To clean and tidy these datasets, we first load them in using `read_csv` and then set the na values and skip rows if needed. Then, for the accelerometer data, we use `pivot_longer` to change all of the column names from min1 to min1440 to a single variable for minutes and a separate column for the values, and ensure all of the typing is correct. For the demographic data, we case match for the sex and then filter for anyone under the age of 21 and with any NA demographic characteristics. Lastly, we filter out the accelerometer dataset for anyone who was removed from the demographic dataset. 
+
+Now we create a table for the number of men and women in the study in each education category, and create a visualization of the age distributions for men and women in each education category.
+
+```{r}
+table1 = demo_data |> 
+  mutate(
+    ) |> 
+  group_by(sex, education) |> 
+  summarize(count = n()) 
+
+table1 |> knitr::kable(digits = 1)
+
+plot3 =  
+  demo_data |> 
+  ggplot(aes(x = age, fill=sex)) +
+  geom_density(alpha=0.5) +
+  facet_grid(. ~ education)
+
+plot3
+```
+
+
+Now we have created our table and plot. The table shows that there is substantially more men and women who have received an education greater than high school in our dataset, with women having an education lower than high school slightly more than equivalent, and men having slightly more equivalent to high school education than lower. The plot additionally reveals that for women, there tend to me more older women with less than a high school or equivalent education while for men, there appears to be more older men with less than a high school education, but a consistent age range for equivalent education. For both men and women, there are much more younger people with a higher education compared to the older people.
+
+Now we can create another plot for total activity for each participant, grouped by sex and education.
+
+```{r}
+total_data = accel_data |> 
+  group_by(seqn) |> 
+  summarize(total_activity = sum(value, na.rm=TRUE), .groups = "drop")
+
+demo_data |> 
+  mutate(
+    total_activity = pull(total_data, total_activity)
+  ) |> 
+  ggplot(aes(x=age, y=total_activity, color=sex)) +
+  geom_point()+
+  geom_smooth(se=FALSE) +
+  facet_grid(. ~ education)
+
+```
+
+Looking at the table above, we can see that the for all three education groups, the trend lines slope downwards, which makes sense as on average, the older we get the less activity we can do. We could argue that for the less than high school education group, the trend lines are more steep than the other two groups, but I would hesitate to do so given how large the point spread/variance is.
+
+Lastly, we create a plot of 24 hour activity time course for each education level, with color to indicate sex.
+
+```{r}
+#twenty-four hour data
+tf_data = accel_data |>
+  inner_join(demo_data, by="seqn") |> 
+  group_by(minute, sex, education) |> 
+  summarize(mean_day = mean(value, na.rm = TRUE), .groups = "drop")
+
+tf_data |> ggplot(aes(x = minute, y=mean_day, color=sex)) +
+  geom_point(alpha=0.0) +
+  geom_smooth() +
+  facet_grid(. ~ education) +
+  labs(
+    y = "Activity time",
+    x = "Minute",
+  )
+```
+
+We initially plot this as a point/scatter plot distirbution, but due to the number of points and subsequent ambiguity, we change over to the smooth curve approximation for better clarity. We can see that for the education group, less than high school, the men and women activity time is very similar over the day, with men perhaps having slightly more activity early in the day. In the following two education groups, we can see that women have a higher activity time during the middle sections of the day, which is especially prominent in the more than high school education group.
+
+# Problem 3
+
+
+
+
